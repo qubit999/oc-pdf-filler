@@ -88,7 +88,8 @@ def _cmd_fill(args: argparse.Namespace) -> int:
 
     schema = extract_to_dict(str(src))
     checkbox_names = [f["name"] for f in schema["fields"] if f["type"] == "checkbox"]
-    radio_names = [f["name"] for f in schema["fields"] if f["type"] == "radio"]
+    radio_fields = [f for f in schema["fields"] if f["type"] == "radio"]
+    radio_names = [f["name"] for f in radio_fields]
     unset_checkboxes = [n for n in checkbox_names if n not in values]
     unset_radios = [n for n in radio_names if n not in values]
 
@@ -96,6 +97,14 @@ def _cmd_fill(args: argparse.Namespace) -> int:
         default_value = args.default_unset_checkboxes == "on"
         for name in unset_checkboxes:
             values[name] = default_value
+
+    if args.default_unset_radios == "first":
+        for f in radio_fields:
+            if f["name"] in values:
+                continue
+            options = f.get("options") or []
+            if options:
+                values[f["name"]] = options[0]
 
     final, attempts = fill_pdf(
         args.pdf,
@@ -117,6 +126,7 @@ def _cmd_fill(args: argparse.Namespace) -> int:
         "unset_checkboxes": unset_checkboxes,
         "unset_radios": unset_radios,
         "default_unset_checkboxes": args.default_unset_checkboxes,
+        "default_unset_radios": args.default_unset_radios,
         "error": final.error,
         "attempts": [a.to_dict() for a in attempts],
     }
@@ -128,6 +138,15 @@ def _cmd_fill(args: argparse.Namespace) -> int:
             f"{' ...' if len(unset_checkboxes) > 8 else ''}\n"
             f"Pass --default-unset-checkboxes off to force them to false, or include "
             f"them explicitly in the values file.\n"
+        )
+
+    if unset_radios and args.default_unset_radios == "skip":
+        sys.stderr.write(
+            f"warning: {len(unset_radios)} radio field(s) were not in your values "
+            f"JSON and were left untouched: {', '.join(unset_radios[:8])}"
+            f"{' ...' if len(unset_radios) > 8 else ''}\n"
+            f"Pass --default-unset-radios first to pick the first available option "
+            f"for each, or include them explicitly in the values file.\n"
         )
 
     if args.strict and (final.missing_fields or final.failed_fields or not final.success):
@@ -188,6 +207,13 @@ def main(argv: list[str] | None = None) -> int:
                         "How to handle checkbox fields not present in the values "
                         "JSON. 'off' (recommended) sets them to false, 'on' to "
                         "true, 'skip' (default) leaves them as-is."
+                    ))
+    pf.add_argument("--default-unset-radios",
+                    choices=["first", "skip"], default="skip",
+                    help=(
+                        "How to handle radio fields not present in the values "
+                        "JSON. 'first' picks the first available option for each, "
+                        "'skip' (default) leaves them as-is."
                     ))
     pf.set_defaults(func=_cmd_fill)
 

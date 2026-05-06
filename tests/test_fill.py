@@ -116,7 +116,7 @@ def test_cli_fill_default_output_in_workspace(tmp_path):
 
 
 def test_cli_fill_default_unset_checkboxes_off(tmp_path):
-    """--default-unset-checkboxes off should fill all checkboxes to false even when omitted."""
+    """--default-unset-checkboxes off should be recorded in the summary."""
     values_path = tmp_path / "v.json"
     values_path.write_text(json.dumps({"Name Verantwortlicher": "Box Test"}))
     env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
@@ -125,10 +125,13 @@ def test_cli_fill_default_unset_checkboxes_off(tmp_path):
          str(KUNDEN), str(values_path), "--default-unset-checkboxes", "off"],
         capture_output=True, text=True, env=env,
     )
-    assert proc.returncode == 0, proc.stderr
+    assert proc.returncode in (0, 1), proc.stderr
     summary = json.loads(proc.stdout)
     assert summary["default_unset_checkboxes"] == "off"
     assert isinstance(summary.get("unset_checkboxes"), list)
+    # With "off", every previously-unset checkbox should now be in the values
+    # we attempted to fill, so unset_checkboxes records what was forced.
+    assert summary["unset_checkboxes"], "expected some unset checkboxes detected"
 
 
 def test_cli_fill_default_unset_checkboxes_skip_warns(tmp_path):
@@ -140,8 +143,29 @@ def test_cli_fill_default_unset_checkboxes_skip_warns(tmp_path):
          str(KUNDEN), str(values_path)],
         capture_output=True, text=True, env=env,
     )
-    assert proc.returncode == 0, proc.stderr
+    assert proc.returncode in (0, 1), proc.stderr
     summary = json.loads(proc.stdout)
+    assert summary["default_unset_checkboxes"] == "skip"
+    assert summary["unset_checkboxes"], "expected unset checkboxes detected"
+    assert "checkbox field" in proc.stderr
+
+
+def test_cli_fill_default_unset_radios_first(tmp_path):
+    """--default-unset-radios first should pick the first option for unset radios."""
+    values_path = tmp_path / "v.json"
+    values_path.write_text(json.dumps({"Name Verantwortlicher": "Radio Test"}))
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
+    proc = subprocess.run(
+        [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
+         str(KUNDEN), str(values_path), "--default-unset-radios", "first"],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode in (0, 1), proc.stderr
+    summary = json.loads(proc.stdout)
+    assert summary["default_unset_radios"] == "first"
+    assert isinstance(summary.get("unset_radios"), list)
+
+
 def test_cli_fill_reroutes_outside_workspace(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()

@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.10+ on the agent host. Optional system dependency `pdftk` enables a last-resort backend; optional Python packages `pdfrw` and `PyMuPDF` expand the fallback chain.
 metadata:
   author: qubit999
-  version: "0.1.4"
+  version: "0.1.5"
   homepage: https://github.com/qubit999/oc-pdf-filler
 ---
 
@@ -101,7 +101,10 @@ LLMs tend to omit fields they're unsure about, which silently leaves checkboxes 
 - **Radio** (`type: radio`): set the exact export string from `options`. If the user didn't pick one, leave it out only if it's truly optional; otherwise ask the user or pick the most plausible value.
 - **Text / choice / signature**: omit only if the field is genuinely blank.
 
-If you are unsure for a checkbox, choose `false`, not omission. The CLI's `unset_checkboxes` summary field tells you which checkboxes were left out so you can self-correct on the next pass. As a safety net, you can also pass `--default-unset-checkboxes off` to force every untouched checkbox to false in one go.
+If you are unsure for a checkbox, choose `false`, not omission. The CLI's `unset_checkboxes` and `unset_radios` summary fields tell you which fields were left out so you can self-correct on the next pass. As safety nets you can pass:
+
+- `--default-unset-checkboxes off` to force every untouched checkbox to false in one go.
+- `--default-unset-radios first` to pick the first available option for every untouched radio group.
 
 ## Step 3: Fill the PDF
 
