@@ -45,5 +45,8 @@ htmlcov/
 
 # Local artifacts
 *.filled.pdf
+*_done.pdf
+fields.json
+out.pdf
 schema.json
 filled.pdf
