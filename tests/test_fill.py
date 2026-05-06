@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -74,9 +75,10 @@ def test_orchestrator_auto(out_pdf):
 
 def test_cli_extract_smoke(tmp_path):
     out = tmp_path / "fields.json"
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
     proc = subprocess.run(
         [sys.executable, "-m", "oc_pdf_filler.cli", "extract", str(VORBLATT), "-o", str(out)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     assert proc.returncode == 0, proc.stderr
     data = json.loads(out.read_text())
@@ -87,12 +89,46 @@ def test_cli_fill_smoke(tmp_path):
     values_path = tmp_path / "v.json"
     values_path.write_text(json.dumps({"Name Verantwortlicher": "CLI Test"}))
     out = tmp_path / "out.pdf"
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
     proc = subprocess.run(
         [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
          str(VORBLATT), str(values_path), "-o", str(out)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, env=env,
     )
     assert proc.returncode == 0, proc.stderr
     assert out.exists()
     fields = {f.name: f.value for f in extract_fields(out)}
     assert fields["Name Verantwortlicher"] == "CLI Test"
+
+
+def test_cli_fill_default_output_in_workspace(tmp_path):
+    values_path = tmp_path / "v.json"
+    values_path.write_text(json.dumps({"Name Verantwortlicher": "WS Default"}))
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
+    proc = subprocess.run(
+        [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
+         str(VORBLATT), str(values_path)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    expected = tmp_path / f"{VORBLATT.stem}_done.pdf"
+    assert expected.exists(), f"expected default output at {expected}"
+
+
+def test_cli_fill_reroutes_outside_workspace(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    values_path = workspace / "v.json"
+    values_path.write_text(json.dumps({"Name Verantwortlicher": "Reroute"}))
+    bad_out = outside / "evil.pdf"
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(workspace)}
+    proc = subprocess.run(
+        [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
+         str(VORBLATT), str(values_path), "-o", str(bad_out)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert not bad_out.exists()
+    assert (workspace / "evil.pdf").exists()

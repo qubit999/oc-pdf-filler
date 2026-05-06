@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,6 +14,51 @@ from .fill import fill_pdf, available_backends
 from .backends import DEFAULT_ORDER
 
 
+_WORKSPACE_ENV_VARS = (
+    "OC_PDF_FILLER_WORKSPACE",
+    "OPENCLAW_WORKSPACE",
+    "CLAWHUB_WORKSPACE",
+    "AGENT_WORKSPACE",
+    "SKILL_WORKSPACE",
+    "WORKSPACE",
+)
+
+
+def _resolve_workspace(explicit: str | None) -> Path:
+    """Pick the directory all artifacts must stay inside."""
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    for var in _WORKSPACE_ENV_VARS:
+        val = os.environ.get(var)
+        if val:
+            return Path(val).expanduser().resolve()
+    return Path.cwd().resolve()
+
+
+def _confine_to_workspace(path: str | Path, workspace: Path, default_name: str) -> Path:
+    """Resolve `path` so the result is always inside `workspace`.
+
+    Relative paths join the workspace; absolute paths outside the workspace
+    are rewritten to use just their basename inside the workspace, so the
+    agent host's sandbox doesn't reject the artifact.
+    """
+    workspace.mkdir(parents=True, exist_ok=True)
+    p = Path(path).expanduser() if path else Path(default_name)
+    if not p.is_absolute():
+        p = workspace / p
+    p = p.resolve()
+    try:
+        p.relative_to(workspace)
+        return p
+    except ValueError:
+        rerouted = (workspace / (p.name or default_name)).resolve()
+        sys.stderr.write(
+            f"warning: '{p}' is outside the workspace ({workspace}); "
+            f"writing to '{rerouted}' instead.\n"
+        )
+        return rerouted
+
+
 def _cmd_extract(args: argparse.Namespace) -> int:
     data = extract_to_dict(args.pdf)
     if not args.include_values:
@@ -20,7 +66,10 @@ def _cmd_extract(args: argparse.Namespace) -> int:
             f.pop("value", None)
     text = json.dumps(data, indent=2, ensure_ascii=False)
     if args.output:
-        Path(args.output).write_text(text, encoding="utf-8")
+        workspace = _resolve_workspace(args.workspace)
+        default_name = f"{Path(args.pdf).stem}_schema.json"
+        out = _confine_to_workspace(args.output, workspace, default_name)
+        out.write_text(text, encoding="utf-8")
     else:
         print(text)
     return 0
@@ -32,15 +81,15 @@ def _cmd_fill(args: argparse.Namespace) -> int:
         print("error: values JSON must be an object {field: value}", file=sys.stderr)
         return 2
 
-    output = args.output
-    if not output:
-        src = Path(args.pdf)
-        output = str(Path.cwd() / f"{src.stem}_done{src.suffix or '.pdf'}")
+    workspace = _resolve_workspace(args.workspace)
+    src = Path(args.pdf)
+    default_name = f"{src.stem}_done{src.suffix or '.pdf'}"
+    output = _confine_to_workspace(args.output, workspace, default_name)
 
     final, attempts = fill_pdf(
         args.pdf,
         values,
-        output,
+        str(output),
         backend=args.backend,
         flatten=args.flatten,
         best_effort=args.best_effort,
@@ -49,7 +98,8 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     summary = {
         "winning_backend": final.backend,
         "success": final.success,
-        "output_path": str(Path(output).resolve()),
+        "workspace": str(workspace),
+        "output_path": str(output),
         "filled": final.filled_fields,
         "missing": final.missing_fields,
         "failed": final.failed_fields,
@@ -76,6 +126,15 @@ def _cmd_list_backends(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="oc-pdf-filler", description=__doc__)
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    p.add_argument(
+        "--workspace",
+        help=(
+            "Directory all output artifacts must stay inside. "
+            "Defaults to $OC_PDF_FILLER_WORKSPACE / $OPENCLAW_WORKSPACE / "
+            "$CLAWHUB_WORKSPACE / $AGENT_WORKSPACE / $SKILL_WORKSPACE / "
+            "$WORKSPACE, or the current directory."
+        ),
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pe = sub.add_parser("extract", help="Extract field schema from a PDF.")
@@ -89,7 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("pdf")
     pf.add_argument("values", help="JSON file: {field_name: value}")
     pf.add_argument("-o", "--output",
-                    help="Output PDF path. Defaults to ./<input-stem>_done.pdf in cwd.")
+                    help=(
+                        "Output PDF path. Resolved relative to the workspace; "
+                        "defaults to <input-stem>_done.pdf inside the workspace."
+                    ))
     pf.add_argument("--backend", default="auto",
                     choices=["auto"] + [b.name for b in DEFAULT_ORDER])
     pf.add_argument("--flatten", action="store_true")

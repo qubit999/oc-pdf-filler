@@ -5,13 +5,34 @@ license: MIT
 compatibility: Requires Python 3.10+ on the agent host. Optional system dependency `pdftk` enables a last-resort backend; optional Python packages `pdfrw` and `PyMuPDF` expand the fallback chain.
 metadata:
   author: qubit999
-  version: "0.1.2"
+  version: "0.1.3"
   homepage: https://github.com/qubit999/oc-pdf-filler
 ---
 
 # pdf-filler
 
 Operate on PDF AcroForms: list every field with its type and current value, then fill the PDF with values supplied as JSON. The skill calls a small Python package (`oc-pdf-filler`) that wraps a fallback chain of PDF libraries, so a single recalcitrant PDF doesn't block the workflow.
+
+## Workspace rules (read this first)
+
+Many agent hosts run inside a sandbox that only allows reads/writes inside a
+specific workspace folder. Files written outside that folder show up as
+"Unavailable / Outside allowed folders" and the user can't download them.
+
+The CLI enforces this for you:
+
+- The "workspace" is resolved from the first set environment variable in this list,
+  falling back to the current working directory:
+  `OC_PDF_FILLER_WORKSPACE`, `OPENCLAW_WORKSPACE`, `CLAWHUB_WORKSPACE`,
+  `AGENT_WORKSPACE`, `SKILL_WORKSPACE`, `WORKSPACE`.
+- All output paths (schema JSON and filled PDF) are resolved **relative to the workspace**.
+- If you pass an absolute `--output` that points outside the workspace, the CLI
+  rewrites it to the same basename inside the workspace (and prints a warning to
+  stderr).
+- You can override the workspace explicitly with `--workspace DIR`.
+
+In practice: pass relative paths (e.g. `-o form_done.pdf`), or omit `--output`
+entirely. The default is `<input-stem>_done.pdf` inside the workspace.
 
 ## When to use
 
@@ -41,10 +62,10 @@ python scripts/list_backends.py
 
 ## Step 1: Extract the field schema
 
-Always extract first so you know the exact field names and types before constructing the JSON values file. Write outputs to the conversation working directory (cwd) so they remain accessible — do not write to `/tmp` or other directories outside the workspace.
+Always extract first so you know the exact field names and types before constructing the JSON values file. Use a workspace-relative path for the output (the CLI confines it to the workspace automatically).
 
 ```bash
-python scripts/extract.py /path/to/form.pdf --output ./schema.json --include-values
+python scripts/extract.py /path/to/form.pdf --output schema.json --include-values
 ```
 
 Each entry in the resulting JSON has:
@@ -74,15 +95,13 @@ A starter template is included at `assets/values.example.json`.
 
 ## Step 3: Fill the PDF
 
-Write the filled PDF to a path inside the conversation working directory. Avoid `/tmp` and other host-private directories; the chat host can only attach files that live in the workspace it sees.
-
-If you omit `--output`, the CLI writes to `./<input-stem>_done.pdf` in the current directory (e.g. `form.pdf` → `./form_done.pdf`), which is the recommended default — it preserves the original filename so users recognise the result.
+Omit `--output` to get the recommended default `<input-stem>_done.pdf` inside the workspace, or pass a workspace-relative filename. Absolute paths outside the workspace are automatically rewritten into it (the host's sandbox would reject them otherwise).
 
 ```bash
-# preferred: keep the original name with _done suffix
-python scripts/fill.py /path/to/form.pdf ./values.json
-# or pass an explicit path
-python scripts/fill.py /path/to/form.pdf ./values.json --output ./form_done.pdf
+# preferred: keep the original name with _done suffix, in the workspace
+python scripts/fill.py /path/to/form.pdf values.json
+# or pass an explicit relative path
+python scripts/fill.py /path/to/form.pdf values.json --output form_done.pdf
 ```
 
 By default the orchestrator uses `--backend auto`, walking the chain `pypdf -> pdfrw -> PyMuPDF -> pdftk` and stopping at the first backend that fills every field.
@@ -94,27 +113,26 @@ Useful flags:
 - `--flatten` -- bake values into the PDF so they can't be edited (best support: PyMuPDF, pdftk)
 - `--strict` -- exit non-zero if any requested field is missing or unfillable
 
-The script prints a JSON summary including `winning_backend`, `output_path` (absolute path of the resulting PDF), `filled`, `missing`, `failed`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
+The script prints a JSON summary including `winning_backend`, `workspace`, `output_path` (absolute path of the resulting PDF, always inside the workspace), `filled`, `missing`, `failed`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
 
 ## Delivering the result to the user
 
-After a successful fill, the user expects to receive the PDF as an attachment, not just a path in chat. To make that work reliably across hosts:
+After a successful fill, the user expects to receive the PDF as an attachment. To make that work reliably across hosts:
 
-1. Always write the output PDF inside the current working directory (e.g. `./filled.pdf`), never `/tmp` or other absolute system paths. Most chat hosts only expose files from the workspace cwd to the user.
-2. Use the `output_path` field from the fill summary as the canonical absolute path of the resulting file.
-3. Surface that path in your final message, and use whatever attachment / file-return mechanism the host provides (for example, returning a file artifact with that path) so the PDF arrives as a downloadable attachment.
-4. If the host has no attachment channel, leave the file in cwd and tell the user the relative path so they can fetch it from the workspace.
+1. Read `output_path` from the fill summary. It is guaranteed to be inside the workspace, so the host can attach it.
+2. Surface that path in your final message and use whatever attachment / file-return mechanism the host provides so the PDF arrives as a downloadable attachment.
+3. Never write the PDF outside the workspace (e.g. `/tmp`, `/var`, your home directory). Sandboxed hosts will mark it as "Unavailable / Outside allowed folders".
 
 ## End-to-end example
 
 ```bash
-python scripts/extract.py form.pdf -o ./schema.json
+python scripts/extract.py form.pdf -o schema.json
 # ... agent inspects schema.json, builds values.json based on user input ...
-python scripts/fill.py form.pdf ./values.json
-# writes ./form_done.pdf in cwd
+python scripts/fill.py form.pdf values.json
+# writes <workspace>/form_done.pdf
 ```
 
-After filling, re-run `extract.py --include-values ./form_done.pdf` and confirm the values stuck before delivering the PDF to the user.
+After filling, re-run `extract.py --include-values form_done.pdf` and confirm the values stuck before delivering the PDF to the user.
 
 ## Notes and edge cases
 
