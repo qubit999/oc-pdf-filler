@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oc-pdf-filler"
+version = "0.1.0"
+description = "Extract and fill PDF AcroForm fields with a multi-backend fallback chain (pypdf, pdfrw, PyMuPDF, pdftk)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "alex" }]
+keywords = ["pdf", "acroform", "form-filling", "pypdf", "pdfrw", "pymupdf", "pdftk", "openclaw", "agent-skill"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business",
+    "Topic :: Text Processing",
+]
+dependencies = [
+    "pypdf>=4.0",
+]
+
+[project.optional-dependencies]
+pdfrw = ["pdfrw>=0.4"]
+pymupdf = ["PyMuPDF>=1.23"]
+all = ["pdfrw>=0.4", "PyMuPDF>=1.23"]
+dev = ["pytest>=7", "pdfrw>=0.4", "PyMuPDF>=1.23"]
+
+[project.scripts]
+oc-pdf-filler = "oc_pdf_filler.cli:main"
+
+[project.urls]
+Homepage = "https://clawhub.ai/"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oc_pdf_filler"]
