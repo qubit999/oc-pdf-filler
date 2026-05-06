@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.10+ on the agent host. Optional system dependency `pdftk` enables a last-resort backend; optional Python packages `pdfrw` and `PyMuPDF` expand the fallback chain.
 metadata:
   author: qubit999
-  version: "0.1.3"
+  version: "0.1.4"
   homepage: https://github.com/qubit999/oc-pdf-filler
 ---
 
@@ -93,6 +93,16 @@ The fill input is a flat JSON object `{ "FieldName": value }`. Example:
 
 A starter template is included at `assets/values.example.json`.
 
+### Critical: include every checkbox and radio explicitly
+
+LLMs tend to omit fields they're unsure about, which silently leaves checkboxes unchecked in the output PDF. Don't do that. For every field in the schema:
+
+- **Checkbox** (`type: checkbox`): set `true` or `false`. If the user didn't mention it, default to `false` rather than omitting the key.
+- **Radio** (`type: radio`): set the exact export string from `options`. If the user didn't pick one, leave it out only if it's truly optional; otherwise ask the user or pick the most plausible value.
+- **Text / choice / signature**: omit only if the field is genuinely blank.
+
+If you are unsure for a checkbox, choose `false`, not omission. The CLI's `unset_checkboxes` summary field tells you which checkboxes were left out so you can self-correct on the next pass. As a safety net, you can also pass `--default-unset-checkboxes off` to force every untouched checkbox to false in one go.
+
 ## Step 3: Fill the PDF
 
 Omit `--output` to get the recommended default `<input-stem>_done.pdf` inside the workspace, or pass a workspace-relative filename. Absolute paths outside the workspace are automatically rewritten into it (the host's sandbox would reject them otherwise).
@@ -113,15 +123,20 @@ Useful flags:
 - `--flatten` -- bake values into the PDF so they can't be edited (best support: PyMuPDF, pdftk)
 - `--strict` -- exit non-zero if any requested field is missing or unfillable
 
-The script prints a JSON summary including `winning_backend`, `workspace`, `output_path` (absolute path of the resulting PDF, always inside the workspace), `filled`, `missing`, `failed`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
+The script prints a JSON summary including `winning_backend`, `workspace`, `output_path` (absolute path of the resulting PDF, always inside the workspace), `filled`, `missing`, `failed`, `unset_checkboxes`, `unset_radios`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
 
 ## Delivering the result to the user
 
-After a successful fill, the user expects to receive the PDF as an attachment. To make that work reliably across hosts:
+**Send the file back automatically as soon as the fill succeeds. Do not wait for the user to ask.** Users on chat platforms (Telegram, Slack, Discord, Teams, the ClawHub web client, etc.) expect the finished PDF to arrive in the conversation as an attachment immediately after you announce success.
+
+Procedure:
 
 1. Read `output_path` from the fill summary. It is guaranteed to be inside the workspace, so the host can attach it.
-2. Surface that path in your final message and use whatever attachment / file-return mechanism the host provides so the PDF arrives as a downloadable attachment.
-3. Never write the PDF outside the workspace (e.g. `/tmp`, `/var`, your home directory). Sandboxed hosts will mark it as "Unavailable / Outside allowed folders".
+2. Use whatever attachment / file-return mechanism the host provides — Telegram bot `sendDocument`, Slack `files.upload`, the agent runtime's own `attach_file` / `send_file` tool, or simply emit it as a workspace artifact. Do not ask the user "do you want me to send it?"; just send it.
+3. In the same turn, briefly confirm what was sent (filename + filled-field count). The user shouldn't have to ask twice.
+4. If you genuinely cannot find an attachment channel, surface the workspace-relative path so the user can fetch it manually — but treat that as a last resort.
+
+Never write the PDF outside the workspace (e.g. `/tmp`, `/var`, your home directory). Sandboxed hosts will mark it as "Unavailable / Outside allowed folders".
 
 ## End-to-end example
 

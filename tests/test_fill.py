@@ -115,6 +115,33 @@ def test_cli_fill_default_output_in_workspace(tmp_path):
     assert expected.exists(), f"expected default output at {expected}"
 
 
+def test_cli_fill_default_unset_checkboxes_off(tmp_path):
+    """--default-unset-checkboxes off should fill all checkboxes to false even when omitted."""
+    values_path = tmp_path / "v.json"
+    values_path.write_text(json.dumps({"Name Verantwortlicher": "Box Test"}))
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
+    proc = subprocess.run(
+        [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
+         str(KUNDEN), str(values_path), "--default-unset-checkboxes", "off"],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    summary = json.loads(proc.stdout)
+    assert summary["default_unset_checkboxes"] == "off"
+    assert isinstance(summary.get("unset_checkboxes"), list)
+
+
+def test_cli_fill_default_unset_checkboxes_skip_warns(tmp_path):
+    values_path = tmp_path / "v.json"
+    values_path.write_text(json.dumps({"Name Verantwortlicher": "Box Skip"}))
+    env = {**os.environ, "OC_PDF_FILLER_WORKSPACE": str(tmp_path)}
+    proc = subprocess.run(
+        [sys.executable, "-m", "oc_pdf_filler.cli", "fill",
+         str(KUNDEN), str(values_path)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    summary = json.loads(proc.stdout)
 def test_cli_fill_reroutes_outside_workspace(tmp_path):
     workspace = tmp_path / "ws"
     workspace.mkdir()

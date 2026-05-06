@@ -86,6 +86,17 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     default_name = f"{src.stem}_done{src.suffix or '.pdf'}"
     output = _confine_to_workspace(args.output, workspace, default_name)
 
+    schema = extract_to_dict(str(src))
+    checkbox_names = [f["name"] for f in schema["fields"] if f["type"] == "checkbox"]
+    radio_names = [f["name"] for f in schema["fields"] if f["type"] == "radio"]
+    unset_checkboxes = [n for n in checkbox_names if n not in values]
+    unset_radios = [n for n in radio_names if n not in values]
+
+    if args.default_unset_checkboxes != "skip":
+        default_value = args.default_unset_checkboxes == "on"
+        for name in unset_checkboxes:
+            values[name] = default_value
+
     final, attempts = fill_pdf(
         args.pdf,
         values,
@@ -103,9 +114,21 @@ def _cmd_fill(args: argparse.Namespace) -> int:
         "filled": final.filled_fields,
         "missing": final.missing_fields,
         "failed": final.failed_fields,
+        "unset_checkboxes": unset_checkboxes,
+        "unset_radios": unset_radios,
+        "default_unset_checkboxes": args.default_unset_checkboxes,
         "error": final.error,
         "attempts": [a.to_dict() for a in attempts],
     }
+
+    if unset_checkboxes and args.default_unset_checkboxes == "skip":
+        sys.stderr.write(
+            f"warning: {len(unset_checkboxes)} checkbox field(s) were not in your "
+            f"values JSON and were left untouched: {', '.join(unset_checkboxes[:8])}"
+            f"{' ...' if len(unset_checkboxes) > 8 else ''}\n"
+            f"Pass --default-unset-checkboxes off to force them to false, or include "
+            f"them explicitly in the values file.\n"
+        )
 
     if args.strict and (final.missing_fields or final.failed_fields or not final.success):
         print(json.dumps(summary, indent=2), file=sys.stderr)
@@ -159,6 +182,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="Exit non-zero if any field is missing or fails.")
     pf.add_argument("--best-effort", action="store_true",
                     help="Chain backends so partial fills accumulate.")
+    pf.add_argument("--default-unset-checkboxes",
+                    choices=["off", "on", "skip"], default="skip",
+                    help=(
+                        "How to handle checkbox fields not present in the values "
+                        "JSON. 'off' (recommended) sets them to false, 'on' to "
+                        "true, 'skip' (default) leaves them as-is."
+                    ))
     pf.set_defaults(func=_cmd_fill)
 
     pb = sub.add_parser("list-backends", help="List installed backends.")
