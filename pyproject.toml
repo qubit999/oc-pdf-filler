@@ -32,7 +32,9 @@ dev = ["pytest>=7", "pdfrw>=0.4", "PyMuPDF>=1.23"]
 oc-pdf-filler = "oc_pdf_filler.cli:main"
 
 [project.urls]
-Homepage = "https://clawhub.ai/"
+Homepage = "https://github.com/qubit999/oc-pdf-filler"
+Repository = "https://github.com/qubit999/oc-pdf-filler"
+Issues = "https://github.com/qubit999/oc-pdf-filler/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/oc_pdf_filler"]
