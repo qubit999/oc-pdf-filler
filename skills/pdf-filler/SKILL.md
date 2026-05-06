@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires Python 3.10+ on the agent host. Optional system dependency `pdftk` enables a last-resort backend; optional Python packages `pdfrw` and `PyMuPDF` expand the fallback chain.
 metadata:
   author: qubit999
-  version: "0.1.1"
+  version: "0.1.2"
   homepage: https://github.com/qubit999/oc-pdf-filler
 ---
 
@@ -74,10 +74,15 @@ A starter template is included at `assets/values.example.json`.
 
 ## Step 3: Fill the PDF
 
-Write the filled PDF to a path inside the conversation working directory (e.g. `./filled.pdf`). Avoid `/tmp` and other host-private directories; the chat host can only attach files that live in the workspace it sees.
+Write the filled PDF to a path inside the conversation working directory. Avoid `/tmp` and other host-private directories; the chat host can only attach files that live in the workspace it sees.
+
+If you omit `--output`, the CLI writes to `./<input-stem>_done.pdf` in the current directory (e.g. `form.pdf` → `./form_done.pdf`), which is the recommended default — it preserves the original filename so users recognise the result.
 
 ```bash
-python scripts/fill.py /path/to/form.pdf ./values.json --output ./filled.pdf
+# preferred: keep the original name with _done suffix
+python scripts/fill.py /path/to/form.pdf ./values.json
+# or pass an explicit path
+python scripts/fill.py /path/to/form.pdf ./values.json --output ./form_done.pdf
 ```
 
 By default the orchestrator uses `--backend auto`, walking the chain `pypdf -> pdfrw -> PyMuPDF -> pdftk` and stopping at the first backend that fills every field.
@@ -105,10 +110,11 @@ After a successful fill, the user expects to receive the PDF as an attachment, n
 ```bash
 python scripts/extract.py form.pdf -o ./schema.json
 # ... agent inspects schema.json, builds values.json based on user input ...
-python scripts/fill.py form.pdf ./values.json -o ./filled.pdf
+python scripts/fill.py form.pdf ./values.json
+# writes ./form_done.pdf in cwd
 ```
 
-After filling, re-run `extract.py --include-values ./filled.pdf` and confirm the values stuck before delivering the PDF to the user.
+After filling, re-run `extract.py --include-values ./form_done.pdf` and confirm the values stuck before delivering the PDF to the user.
 
 ## Notes and edge cases
 

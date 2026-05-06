@@ -31,10 +31,16 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     if not isinstance(values, dict):
         print("error: values JSON must be an object {field: value}", file=sys.stderr)
         return 2
+
+    output = args.output
+    if not output:
+        src = Path(args.pdf)
+        output = str(Path.cwd() / f"{src.stem}_done{src.suffix or '.pdf'}")
+
     final, attempts = fill_pdf(
         args.pdf,
         values,
-        args.output,
+        output,
         backend=args.backend,
         flatten=args.flatten,
         best_effort=args.best_effort,
@@ -43,7 +49,7 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     summary = {
         "winning_backend": final.backend,
         "success": final.success,
-        "output_path": str(Path(args.output).resolve()),
+        "output_path": str(Path(output).resolve()),
         "filled": final.filled_fields,
         "missing": final.missing_fields,
         "failed": final.failed_fields,
@@ -82,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     pf = sub.add_parser("fill", help="Fill a PDF with values from a JSON file.")
     pf.add_argument("pdf")
     pf.add_argument("values", help="JSON file: {field_name: value}")
-    pf.add_argument("-o", "--output", required=True)
+    pf.add_argument("-o", "--output",
+                    help="Output PDF path. Defaults to ./<input-stem>_done.pdf in cwd.")
     pf.add_argument("--backend", default="auto",
                     choices=["auto"] + [b.name for b in DEFAULT_ORDER])
     pf.add_argument("--flatten", action="store_true")

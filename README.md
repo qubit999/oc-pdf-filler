@@ -81,6 +81,9 @@ Build a JSON values file. Field names come from the schema verbatim.
 Then run:
 
 ```bash
+# default: writes ./form_done.pdf next to your cwd
+oc-pdf-filler fill form.pdf values.json
+# or pass --output explicitly
 oc-pdf-filler fill form.pdf values.json --output filled.pdf
 ```
 
