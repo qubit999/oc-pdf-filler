@@ -43,6 +43,7 @@ def _cmd_fill(args: argparse.Namespace) -> int:
     summary = {
         "winning_backend": final.backend,
         "success": final.success,
+        "output_path": str(Path(args.output).resolve()),
         "filled": final.filled_fields,
         "missing": final.missing_fields,
         "failed": final.failed_fields,

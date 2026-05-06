@@ -4,9 +4,9 @@ description: Extract and fill PDF AcroForm fields with a multi-backend fallback 
 license: MIT
 compatibility: Requires Python 3.10+ on the agent host. Optional system dependency `pdftk` enables a last-resort backend; optional Python packages `pdfrw` and `PyMuPDF` expand the fallback chain.
 metadata:
-  author: alex
-  version: "0.1.0"
-  homepage: https://github.com/alex/oc-pdf-filler
+  author: qubit999
+  version: "0.1.1"
+  homepage: https://github.com/qubit999/oc-pdf-filler
 ---
 
 # pdf-filler
@@ -41,10 +41,10 @@ python scripts/list_backends.py
 
 ## Step 1: Extract the field schema
 
-Always extract first so you know the exact field names and types before constructing the JSON values file.
+Always extract first so you know the exact field names and types before constructing the JSON values file. Write outputs to the conversation working directory (cwd) so they remain accessible — do not write to `/tmp` or other directories outside the workspace.
 
 ```bash
-python scripts/extract.py /path/to/form.pdf --output /tmp/schema.json --include-values
+python scripts/extract.py /path/to/form.pdf --output ./schema.json --include-values
 ```
 
 Each entry in the resulting JSON has:
@@ -74,8 +74,10 @@ A starter template is included at `assets/values.example.json`.
 
 ## Step 3: Fill the PDF
 
+Write the filled PDF to a path inside the conversation working directory (e.g. `./filled.pdf`). Avoid `/tmp` and other host-private directories; the chat host can only attach files that live in the workspace it sees.
+
 ```bash
-python scripts/fill.py /path/to/form.pdf /tmp/values.json --output /tmp/filled.pdf
+python scripts/fill.py /path/to/form.pdf ./values.json --output ./filled.pdf
 ```
 
 By default the orchestrator uses `--backend auto`, walking the chain `pypdf -> pdfrw -> PyMuPDF -> pdftk` and stopping at the first backend that fills every field.
@@ -87,17 +89,26 @@ Useful flags:
 - `--flatten` -- bake values into the PDF so they can't be edited (best support: PyMuPDF, pdftk)
 - `--strict` -- exit non-zero if any requested field is missing or unfillable
 
-The script prints a JSON summary including `winning_backend`, `filled`, `missing`, `failed`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
+The script prints a JSON summary including `winning_backend`, `output_path` (absolute path of the resulting PDF), `filled`, `missing`, `failed`, and per-attempt details. If filling fails, see `references/BACKENDS.md` for backend-specific troubleshooting tips.
+
+## Delivering the result to the user
+
+After a successful fill, the user expects to receive the PDF as an attachment, not just a path in chat. To make that work reliably across hosts:
+
+1. Always write the output PDF inside the current working directory (e.g. `./filled.pdf`), never `/tmp` or other absolute system paths. Most chat hosts only expose files from the workspace cwd to the user.
+2. Use the `output_path` field from the fill summary as the canonical absolute path of the resulting file.
+3. Surface that path in your final message, and use whatever attachment / file-return mechanism the host provides (for example, returning a file artifact with that path) so the PDF arrives as a downloadable attachment.
+4. If the host has no attachment channel, leave the file in cwd and tell the user the relative path so they can fetch it from the workspace.
 
 ## End-to-end example
 
 ```bash
-python scripts/extract.py form.pdf -o schema.json
+python scripts/extract.py form.pdf -o ./schema.json
 # ... agent inspects schema.json, builds values.json based on user input ...
-python scripts/fill.py form.pdf values.json -o filled.pdf
+python scripts/fill.py form.pdf ./values.json -o ./filled.pdf
 ```
 
-After filling, re-run `extract.py --include-values filled.pdf` and confirm the values stuck before delivering the PDF to the user.
+After filling, re-run `extract.py --include-values ./filled.pdf` and confirm the values stuck before delivering the PDF to the user.
 
 ## Notes and edge cases
 
